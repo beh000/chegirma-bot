@@ -1,5 +1,5 @@
 const cheerio = require('cheerio');
-const { fetchHtml } = require('../utils/http');
+const { fetchRendered } = require('../utils/browser');
 const {
   computeDiscount, extractNextData, deepFindArrays, guessProduct, scrapeCards,
 } = require('../utils/parserHelpers');
@@ -24,8 +24,10 @@ function looksLikeProduct(item) {
     || item.title !== undefined || item.name !== undefined);
 }
 
+// zakaz.evos.uz отдал пустую SPA-оболочку (864 байта) без JS — грузим
+// headless-браузером, чтобы дождаться рендера меню.
 async function parse() {
-  const html = await fetchHtml(PROMO_URL);
+  const html = await fetchRendered(PROMO_URL, { waitForSelector: '[class*="price"]' });
   const $ = cheerio.load(html);
 
   const nextData = extractNextData(html);

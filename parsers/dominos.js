@@ -1,7 +1,7 @@
 const cheerio = require('cheerio');
-const { fetchHtml } = require('../utils/http');
+const { fetchRendered } = require('../utils/browser');
 const {
-  parsePrice, computeDiscount, absoluteUrl, scrapeCards,
+  computeDiscount, scrapeCards,
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://dominos.uz';
@@ -17,8 +17,12 @@ const SELECTORS = {
   link: 'a',
 };
 
+// dominos.uz — Nuxt-сайт, реальные данные зашиты в серилизованный
+// __NUXT_DATA__ (не обычный JSON) и текстовым поиском недостижимы;
+// headless-браузер рендерит финальный DOM, так что цены уже видны как
+// обычный текст — проще, чем писать декодер под их формат сериализации.
 async function parse() {
-  const html = await fetchHtml(PROMO_URL);
+  const html = await fetchRendered(PROMO_URL, { waitForSelector: '[class*="price"]', timeout: 45000 });
   const $ = cheerio.load(html);
 
   const cards = scrapeCards($, BASE_URL, SELECTORS);

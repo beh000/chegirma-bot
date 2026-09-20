@@ -1,5 +1,5 @@
 const cheerio = require('cheerio');
-const { fetchHtml } = require('../utils/http');
+const { fetchRendered } = require('../utils/browser');
 const {
   parsePrice, computeDiscount, absoluteUrl, extractJsonLdProducts, scrapeCards,
 } = require('../utils/parserHelpers');
@@ -9,8 +9,11 @@ const BASE_URL = 'https://korzinka.uz';
 // существовало). id=256 — раздел "ежедневные скидки и акции".
 const PROMO_URL = 'https://korzinka.uz/ru/catalog/special?id=256';
 
-// Best-effort селекторы — сайт похож на React/Next.js витрину, реальные
-// классы карточек нужно подсмотреть в DevTools после первого запуска.
+// korzinka.uz отвечает 403 на обычный axios-запрос (WAF/антибот) — грузим
+// страницу настоящим headless-браузером (Playwright), он же может помочь
+// дождаться JS-рендера каталога.
+// Best-effort селекторы — реальные классы карточек нужно подсмотреть в
+// логах после первого запуска (см. README про INSPECT=1).
 const SELECTORS = {
   item: '.promotion-card, .product-card, [class*="ProductCard"]',
   title: '.product-card__title, [class*="title"], [class*="name"]',
@@ -21,7 +24,7 @@ const SELECTORS = {
 };
 
 async function parse() {
-  const html = await fetchHtml(PROMO_URL);
+  const html = await fetchRendered(PROMO_URL);
   const $ = cheerio.load(html);
 
   const jsonLdProducts = extractJsonLdProducts($);

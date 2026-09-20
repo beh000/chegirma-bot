@@ -4,7 +4,8 @@
   "description": "Telegram-бот — агрегатор скидок и акций Узбекистана для @chegirma_official",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "playwright install --with-deps chromium"
   },
   "license": "UNLICENSED",
   "dependencies": {
@@ -13,6 +14,7 @@
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
     "node-cron": "^4.6.0",
+    "playwright": "^1.63.0",
     "tough-cookie": "^6.0.2"
   }
 }

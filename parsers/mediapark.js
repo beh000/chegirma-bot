@@ -1,5 +1,5 @@
 const cheerio = require('cheerio');
-const { fetchHtml } = require('../utils/http');
+const { fetchRendered } = require('../utils/browser');
 const {
   parsePrice, computeDiscount, absoluteUrl, extractJsonLdProducts, scrapeCards,
 } = require('../utils/parserHelpers');
@@ -18,8 +18,9 @@ const SELECTORS = {
   link: 'a',
 };
 
+// mediapark.uz отвечает 403 на обычный axios-запрос — грузим headless-браузером.
 async function parse() {
-  const html = await fetchHtml(PROMO_URL);
+  const html = await fetchRendered(PROMO_URL);
   const $ = cheerio.load(html);
 
   const jsonLdProducts = extractJsonLdProducts($);

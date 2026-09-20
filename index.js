@@ -7,7 +7,10 @@ const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
-const { inspectUrl, dumpCard } = require('./utils/inspect');
+const { closeBrowser } = require('./utils/browser');
+const {
+  inspectUrl, inspectRendered, dumpCard, dumpCardRendered,
+} = require('./utils/inspect');
 
 const SITES = [
   { name: 'Korzinka', store: 'Korzinka.uz', mod: require('./parsers/korzinka') },
@@ -94,6 +97,10 @@ async function runCycle() {
     await delay(2500);
   }
 
+  // Закрываем headless-браузер между циклами, чтобы не держать Chromium
+  // в памяти постоянно — используется только частью сайтов (browser.js).
+  await closeBrowser();
+
   console.log('=== Цикл завершён ===\n');
 }
 
@@ -109,6 +116,12 @@ const CARD_DUMPS = {
 
 async function runInspection() {
   const only = (process.env.INSPECT_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
+  // INSPECT_BROWSER=1 прогоняет выбранные сайты через headless-браузер
+  // (Playwright) вместо обычного axios-запроса — нужно для WAF-сайтов и
+  // SPA без серверного рендера.
+  const useBrowser = process.env.INSPECT_BROWSER === '1';
+  const inspect = useBrowser ? inspectRendered : inspectUrl;
+  const dump = useBrowser ? dumpCardRendered : dumpCard;
 
   const targets = [];
   for (const site of SITES) {
@@ -121,18 +134,28 @@ async function runInspection() {
 
   for (const t of targets) {
     // eslint-disable-next-line no-await-in-loop
-    await inspectUrl(t.label, t.url, { hintLimit: 20 });
+    await inspect(t.label, t.url, { hintLimit: 20 });
     // eslint-disable-next-line no-await-in-loop
     await delay(1500);
 
     const cardSelector = CARD_DUMPS[t.label];
     if (cardSelector) {
       // eslint-disable-next-line no-await-in-loop
-      await dumpCard(t.label, t.url, cardSelector);
+      await dump(t.label, t.url, cardSelector);
       // eslint-disable-next-line no-await-in-loop
       await delay(1500);
     }
   }
+
+  // Разовая проверка страницы товара Texnomart — обычный axios (сайт
+  // серверно рендерит HTML, браузер тут не нужен) — чтобы увидеть,
+  // показывает ли она старую (зачёркнутую) цену, которой нет на странице
+  // категории.
+  if (process.env.INSPECT_PRODUCT_URL) {
+    await inspectUrl('TexnomartProduct', process.env.INSPECT_PRODUCT_URL, { hintLimit: 20 });
+  }
+
+  if (useBrowser) await closeBrowser();
 }
 
 if (process.env.INSPECT === '1') {

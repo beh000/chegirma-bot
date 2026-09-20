@@ -1,5 +1,6 @@
 const cheerio = require('cheerio');
 const { fetchHtml } = require('./http');
+const { fetchRendered } = require('./browser');
 const { extractNextData, extractJsonLdProducts } = require('./parserHelpers');
 
 // Диагностический режим (запускается при INSPECT=1) — вместо того чтобы
@@ -54,11 +55,11 @@ function findHints($, limit = 15) {
   return hints;
 }
 
-async function inspectUrl(label, url, { hintLimit = 12 } = {}) {
+async function inspectWith(fetcher, label, url, { hintLimit = 12 } = {}) {
   console.log(`\n--- [INSPECT] ${label} → ${url} ---`);
   let html;
   try {
-    html = await fetchHtml(url);
+    html = await fetcher(url);
   } catch (err) {
     console.log(`[INSPECT] ${label}: запрос упал — ${err.message}`);
     return;
@@ -89,13 +90,26 @@ async function inspectUrl(label, url, { hintLimit = 12 } = {}) {
   }
 }
 
+async function inspectUrl(label, url, opts) {
+  return inspectWith(fetchHtml, label, url, opts);
+}
+
+async function inspectRendered(label, url, opts) {
+  return inspectWith(
+    (u) => fetchRendered(u, { waitForSelector: '[class*="price"]', timeout: 45000 }),
+    label,
+    url,
+    opts,
+  );
+}
+
 // Достаёт HTML первого элемента, подходящего под selector — чтобы увидеть
 // РЕАЛЬНУЮ структуру одной карточки товара целиком, а не догадки по кускам.
-async function dumpCard(label, url, selector, maxLen = 2500) {
+async function dumpCardWith(fetcher, label, url, selector, maxLen = 2500) {
   console.log(`\n--- [INSPECT-CARD] ${label} selector="${selector}" ---`);
   let html;
   try {
-    html = await fetchHtml(url);
+    html = await fetcher(url);
   } catch (err) {
     console.log(`[INSPECT-CARD] ${label}: запрос упал — ${err.message}`);
     return;
@@ -110,4 +124,20 @@ async function dumpCard(label, url, selector, maxLen = 2500) {
   console.log(`[INSPECT-CARD] ${label}: длина карточки ${outer.length} символов, показываю первые ${maxLen}:\n${outer.slice(0, maxLen)}`);
 }
 
-module.exports = { inspectUrl, dumpCard };
+async function dumpCard(label, url, selector, maxLen) {
+  return dumpCardWith(fetchHtml, label, url, selector, maxLen);
+}
+
+async function dumpCardRendered(label, url, selector, maxLen) {
+  return dumpCardWith(
+    (u) => fetchRendered(u, { timeout: 45000 }),
+    label,
+    url,
+    selector,
+    maxLen,
+  );
+}
+
+module.exports = {
+  inspectUrl, inspectRendered, dumpCard, dumpCardRendered,
+};

@@ -1,16 +1,16 @@
 const cheerio = require('cheerio');
-const { fetchHtml } = require('../utils/http');
+const { fetchRendered } = require('../utils/browser');
 const {
   parsePrice, computeDiscount, absoluteUrl, extractNextData,
   deepFindArrays, guessProduct, scrapeCards,
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://uzum.uz';
-// В первом деплое /ru/discounts ушёл в "Maximum number of redirects
-// exceeded" — похоже на region/session-редирект, требующий куки (теперь
-// http.js хранит куки между запросами через cookie jar, должно чиниться
-// само). Точный путь раздела скидок не удалось подтвердить веб-поиском —
-// если после редеплоя снова 0 акций, пробуем и другие кандидаты по очереди.
+// Простой axios-запрос на /ru/discounts возвращает не каталог, а страницу
+// "Верификация" — антибот-проверка (похоже на JS-челлендж, не капчу).
+// Headless-браузер выполняет реальный JS и может пройти её автоматически;
+// если нет — просто увидим тот же результат в логах и придётся думать
+// дальше (полноценная капча playwright'ом не решается).
 const PROMO_CANDIDATES = [
   'https://uzum.uz/ru/discounts',
   'https://uzum.uz/ru',
@@ -36,7 +36,7 @@ async function fetchFirstWorking(urls) {
   let lastErr;
   for (const url of urls) {
     try {
-      return await fetchHtml(url);
+      return await fetchRendered(url, { waitForSelector: '[class*="price"]', timeout: 45000 });
     } catch (err) {
       lastErr = err;
       console.warn(`[Uzum] ${url} недоступен: ${err.message}`);
