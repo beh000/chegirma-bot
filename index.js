@@ -7,6 +7,7 @@ const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
+const { inspectUrl } = require('./utils/inspect');
 
 const SITES = [
   { name: 'Korzinka', store: 'Korzinka.uz', mod: require('./parsers/korzinka') },
@@ -96,24 +97,53 @@ async function runCycle() {
   console.log('=== Цикл завершён ===\n');
 }
 
-// Railway ожидает открытый порт у веб-сервисов — держим лёгкий
-// health-check сервер, чтобы деплой не считался нерабочим.
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('chegirma-bot жив и работает');
-}).listen(PORT, () => console.log(`Health-check сервер запущен на порту ${PORT}`));
+// Диагностический режим: INSPECT=1 вместо обычного цикла один раз
+// скачивает реальные страницы всех сайтов и печатает в лог подсказки о
+// структуре разметки (классы у цен, наличие __NEXT_DATA__/JSON-LD) —
+// нужен, чтобы поправить SELECTORS без браузерного доступа к сайтам.
+async function runInspection() {
+  const targets = [];
+  for (const site of SITES) {
+    if (site.mod.DEBUG_URL) targets.push({ label: site.name, url: site.mod.DEBUG_URL });
+    if (site.mod.DEBUG_URLS) {
+      site.mod.DEBUG_URLS.forEach((url, i) => targets.push({ label: `${site.name}#${i}`, url }));
+    }
+  }
+  for (const t of targets) {
+    // eslint-disable-next-line no-await-in-loop
+    await inspectUrl(t.label, t.url);
+    // eslint-disable-next-line no-await-in-loop
+    await delay(1500);
+  }
+}
 
-cron.schedule('*/30 * * * *', () => {
-  runCycle().catch((err) => console.error('Ошибка планового цикла:', err.message));
-});
+if (process.env.INSPECT === '1') {
+  runInspection()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('Ошибка инспекции:', err);
+      process.exit(1);
+    });
+} else {
+  // Railway ожидает открытый порт у веб-сервисов — держим лёгкий
+  // health-check сервер, чтобы деплой не считался нерабочим.
+  const PORT = process.env.PORT || 3000;
+  http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('chegirma-bot жив и работает');
+  }).listen(PORT, () => console.log(`Health-check сервер запущен на порту ${PORT}`));
 
-console.log('chegirma-bot запущен. Проверка каждые 30 минут.');
-runCycle().catch((err) => console.error('Ошибка первого запуска:', err.message));
+  cron.schedule('*/30 * * * *', () => {
+    runCycle().catch((err) => console.error('Ошибка планового цикла:', err.message));
+  });
 
-process.on('unhandledRejection', (err) => {
-  console.error('Необработанная ошибка (unhandledRejection):', err);
-});
-process.on('uncaughtException', (err) => {
-  console.error('Необработанная ошибка (uncaughtException):', err);
-});
+  console.log('chegirma-bot запущен. Проверка каждые 30 минут.');
+  runCycle().catch((err) => console.error('Ошибка первого запуска:', err.message));
+
+  process.on('unhandledRejection', (err) => {
+    console.error('Необработанная ошибка (unhandledRejection):', err);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('Необработанная ошибка (uncaughtException):', err);
+  });
+}

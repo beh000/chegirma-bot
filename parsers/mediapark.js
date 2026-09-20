@@ -50,4 +50,4 @@ async function parse() {
   }));
 }
 
-module.exports = { parse };
+module.exports = { parse, DEBUG_URL: PROMO_URL };

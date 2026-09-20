@@ -45,4 +45,4 @@ async function parse() {
   return cards.map((c) => ({ ...c, discount: computeDiscount(c.oldPrice, c.newPrice) }));
 }
 
-module.exports = { parse };
+module.exports = { parse, DEBUG_URL: PROMO_URL };
