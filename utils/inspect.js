@@ -21,25 +21,31 @@ function classChain(node, $, depth = 4) {
   return chain.join(' < ') || '(нет родителей с классами)';
 }
 
-function findHints($, limit = 12) {
+// Берём ПОЛНЫЙ текст (вместе с потомками), а не только прямые текстовые
+// узлы — иначе пропускаем случаи вида <span>50 000</span><span>сум</span>,
+// где цифры и валюта лежат в разных дочерних тегах.
+function findHints($, limit = 15) {
   const seen = new Set();
   const hints = [];
 
   $('*').each((_, el) => {
     if (hints.length >= limit) return false;
     const node = $(el);
-    const ownText = node.contents().filter((__, c) => c.type === 'text').text().trim();
+    const text = node.text().trim().replace(/\s+/g, ' ');
     const cls = (node.attr('class') || '').trim();
-    const looksLikePrice = ownText && PRICE_TEXT_RE.test(ownText);
-    const classSaysPrice = /price|narx|сумм|cena/i.test(cls);
+    const descendantCount = node.find('*').length;
+    const compact = text.length > 0 && text.length < 80 && descendantCount <= 3;
+
+    const looksLikePrice = compact && PRICE_TEXT_RE.test(text);
+    const classSaysPrice = compact && /price|narx|нарх|сумм/i.test(cls);
     if (!looksLikePrice && !classSaysPrice) return undefined;
 
-    const key = `${el.tagName}.${cls}.${ownText.slice(0, 20)}`;
+    const key = `${el.tagName}.${cls}.${text.slice(0, 20)}`;
     if (seen.has(key)) return undefined;
     seen.add(key);
 
     hints.push(
-      `  <${el.tagName}${cls ? ` class="${cls}"` : ''}> "${ownText.slice(0, 50)}"\n`
+      `  <${el.tagName}${cls ? ` class="${cls}"` : ''}> "${text.slice(0, 60)}" (потомков: ${descendantCount})\n`
       + `    родители: ${classChain(node, $)}`,
     );
     return undefined;
@@ -48,7 +54,7 @@ function findHints($, limit = 12) {
   return hints;
 }
 
-async function inspectUrl(label, url) {
+async function inspectUrl(label, url, { hintLimit = 12 } = {}) {
   console.log(`\n--- [INSPECT] ${label} → ${url} ---`);
   let html;
   try {
@@ -70,10 +76,11 @@ async function inspectUrl(label, url) {
 
   const jsonLd = extractJsonLdProducts($);
   if (jsonLd.length) {
-    console.log(`[INSPECT] ${label}: найдено ${jsonLd.length} JSON-LD Product`);
+    console.log(`[INSPECT] ${label}: найдено ${jsonLd.length} JSON-LD Product, пример: `
+      + `${JSON.stringify(jsonLd[0]).slice(0, 500)}`);
   }
 
-  const hints = findHints($);
+  const hints = findHints($, hintLimit);
   if (hints.length) {
     console.log(`[INSPECT] ${label}: похожие на цену элементы:\n${hints.join('\n')}`);
   } else {
@@ -82,4 +89,25 @@ async function inspectUrl(label, url) {
   }
 }
 
-module.exports = { inspectUrl };
+// Достаёт HTML первого элемента, подходящего под selector — чтобы увидеть
+// РЕАЛЬНУЮ структуру одной карточки товара целиком, а не догадки по кускам.
+async function dumpCard(label, url, selector, maxLen = 2500) {
+  console.log(`\n--- [INSPECT-CARD] ${label} selector="${selector}" ---`);
+  let html;
+  try {
+    html = await fetchHtml(url);
+  } catch (err) {
+    console.log(`[INSPECT-CARD] ${label}: запрос упал — ${err.message}`);
+    return;
+  }
+  const $ = cheerio.load(html);
+  const el = $(selector).first();
+  if (!el.length) {
+    console.log(`[INSPECT-CARD] ${label}: селектор "${selector}" ничего не нашёл`);
+    return;
+  }
+  const outer = $.html(el);
+  console.log(`[INSPECT-CARD] ${label}: длина карточки ${outer.length} символов, показываю первые ${maxLen}:\n${outer.slice(0, maxLen)}`);
+}
+
+module.exports = { inspectUrl, dumpCard };

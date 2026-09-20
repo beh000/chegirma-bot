@@ -7,7 +7,7 @@ const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
-const { inspectUrl } = require('./utils/inspect');
+const { inspectUrl, dumpCard } = require('./utils/inspect');
 
 const SITES = [
   { name: 'Korzinka', store: 'Korzinka.uz', mod: require('./parsers/korzinka') },
@@ -101,19 +101,37 @@ async function runCycle() {
 // скачивает реальные страницы всех сайтов и печатает в лог подсказки о
 // структуре разметки (классы у цен, наличие __NEXT_DATA__/JSON-LD) —
 // нужен, чтобы поправить SELECTORS без браузерного доступа к сайтам.
+// Карточки товара, для которых надо не только искать подсказки, а
+// дампнуть реальный HTML целиком по уже известному селектору контейнера.
+const CARD_DUMPS = {
+  Texnomart: '.product-item-component',
+};
+
 async function runInspection() {
+  const only = (process.env.INSPECT_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
+
   const targets = [];
   for (const site of SITES) {
+    if (only.length && !only.includes(site.name)) continue;
     if (site.mod.DEBUG_URL) targets.push({ label: site.name, url: site.mod.DEBUG_URL });
     if (site.mod.DEBUG_URLS) {
       site.mod.DEBUG_URLS.forEach((url, i) => targets.push({ label: `${site.name}#${i}`, url }));
     }
   }
+
   for (const t of targets) {
     // eslint-disable-next-line no-await-in-loop
-    await inspectUrl(t.label, t.url);
+    await inspectUrl(t.label, t.url, { hintLimit: 20 });
     // eslint-disable-next-line no-await-in-loop
     await delay(1500);
+
+    const cardSelector = CARD_DUMPS[t.label];
+    if (cardSelector) {
+      // eslint-disable-next-line no-await-in-loop
+      await dumpCard(t.label, t.url, cardSelector);
+      // eslint-disable-next-line no-await-in-loop
+      await delay(1500);
+    }
   }
 }
 
