@@ -4,9 +4,10 @@ const {
   parsePrice, computeDiscount, absoluteUrl, extractJsonLdProducts, scrapeCards,
 } = require('../utils/parserHelpers');
 
-const BASE_URL = 'https://makro.uz';
-// ПРОВЕРИТЬ после деплоя: реальный путь раздела акций гипермаркета Makro.
-const PROMO_URL = 'https://makro.uz/aksiya';
+// makro.uz не резолвился (ENOTFOUND) в первом деплое — реальный домен сети
+// супермаркетов Makro найден через веб-поиск.
+const BASE_URL = 'https://makromarket.uz';
+const PROMO_URL = 'https://makromarket.uz/promotions';
 
 const SELECTORS = {
   item: '.product-item, .catalog-item, [class*="ProductCard"]',

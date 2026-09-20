@@ -6,8 +6,15 @@ const {
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://uzum.uz';
-// ПРОВЕРИТЬ после деплоя: раздел скидок маркетплейса Uzum.
-const PROMO_URL = 'https://uzum.uz/ru/discounts';
+// В первом деплое /ru/discounts ушёл в "Maximum number of redirects
+// exceeded" — похоже на region/session-редирект, требующий куки (теперь
+// http.js хранит куки между запросами через cookie jar, должно чиниться
+// само). Точный путь раздела скидок не удалось подтвердить веб-поиском —
+// если после редеплоя снова 0 акций, пробуем и другие кандидаты по очереди.
+const PROMO_CANDIDATES = [
+  'https://uzum.uz/ru/discounts',
+  'https://uzum.uz/ru',
+];
 
 // Uzum — SPA на React/Next.js, обычный HTML почти наверняка пустой.
 // Порядок попыток: 1) __NEXT_DATA__ JSON  2) CSS-селекторы (запасной путь).
@@ -25,8 +32,21 @@ function looksLikeProduct(item) {
     || item.title !== undefined || item.name !== undefined);
 }
 
+async function fetchFirstWorking(urls) {
+  let lastErr;
+  for (const url of urls) {
+    try {
+      return await fetchHtml(url);
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[Uzum] ${url} недоступен: ${err.message}`);
+    }
+  }
+  throw lastErr;
+}
+
 async function parse() {
-  const html = await fetchHtml(PROMO_URL);
+  const html = await fetchFirstWorking(PROMO_CANDIDATES);
   const $ = cheerio.load(html);
 
   const nextData = extractNextData(html);

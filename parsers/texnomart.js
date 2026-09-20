@@ -6,8 +6,8 @@ const {
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://texnomart.uz';
-// ПРОВЕРИТЬ после деплоя: реальный путь раздела акций.
-const PROMO_URL = 'https://texnomart.uz/uz/aksiyalar';
+// /uz/aksiyalar дал 404 в первом деплое — реальный путь найден веб-поиском.
+const PROMO_URL = 'https://texnomart.uz/katalog/akcii-i-skidki/';
 
 const SELECTORS = {
   item: '[class*="product-card"], [class*="ProductCard"], .product-item',

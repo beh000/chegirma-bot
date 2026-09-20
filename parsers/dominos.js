@@ -5,8 +5,8 @@ const {
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://dominos.uz';
-// ПРОВЕРИТЬ после деплоя: реальный путь раздела акций.
-const PROMO_URL = 'https://dominos.uz/promo';
+// /promo дал 404 в первом деплое — подтверждённый веб-поиском раздел акций.
+const PROMO_URL = 'https://dominos.uz/stocks';
 
 const SELECTORS = {
   item: '.promo-card, [class*="PromoCard"], .product-card, .card',

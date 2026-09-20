@@ -5,9 +5,9 @@ const {
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://korzinka.uz';
-// ПРОВЕРИТЬ после деплоя: точный путь раздела акций может отличаться
-// (например /uz/promotions, /aksiya и т.д.) — поправить по факту.
-const PROMO_URL = 'https://korzinka.uz/promotions';
+// Найдено через веб-поиск (в первом деплое /promotions дал 403 — пути не
+// существовало). id=256 — раздел "ежедневные скидки и акции".
+const PROMO_URL = 'https://korzinka.uz/ru/catalog/special?id=256';
 
 // Best-effort селекторы — сайт похож на React/Next.js витрину, реальные
 // классы карточек нужно подсмотреть в DevTools после первого запуска.

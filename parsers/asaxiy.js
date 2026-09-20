@@ -5,8 +5,10 @@ const {
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://asaxiy.uz';
-// ПРОВЕРИТЬ после деплоя: реальный путь раздела акций (книги/техника/канцелярия).
-const PROMO_URL = 'https://asaxiy.uz/aksiya';
+// /aksiya дал 403 в первом деплое — реальный раздел скидок найден веб-поиском.
+// Основной ассортимент Asaxiy — книги/канцелярия, под 3 разрешённые категории
+// (еда/одежда/техника) попадёт в основном их электроника.
+const PROMO_URL = 'https://asaxiy.uz/product/product-list=super-price';
 
 const SELECTORS = {
   item: '.product-card, [class*="ProductCard"], .catalog-item',

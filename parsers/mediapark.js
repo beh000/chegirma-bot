@@ -5,8 +5,9 @@ const {
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://mediapark.uz';
-// ПРОВЕРИТЬ после деплоя: реальный путь раздела акций.
-const PROMO_URL = 'https://mediapark.uz/uz/aksiyalar';
+// /uz/aksiyalar дал 403 в первом деплое — подтверждённый веб-поиском
+// раздел скидок называется /discount.
+const PROMO_URL = 'https://mediapark.uz/discount';
 
 const SELECTORS = {
   item: '.product-card, [class*="ProductCard"], .catalog-item',
