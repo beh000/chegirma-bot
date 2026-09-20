@@ -5,7 +5,7 @@ const http = require('http');
 const { publishDeal } = require('./bot');
 const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount } = require('./utils/parserHelpers');
-const { detectCategory } = require('./utils/category');
+const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
 
 const SITES = [
@@ -18,7 +18,6 @@ const SITES = [
   { name: 'AliExpress', store: 'AliExpress', mod: require('./parsers/aliexpress') },
   { name: 'Evos', store: 'EVOS', mod: require('./parsers/evos') },
   { name: 'Dominos', store: "Domino's Pizza", mod: require('./parsers/dominos') },
-  { name: 'Hamkorbank', store: 'Hamkorbank', mod: require('./parsers/hamkorbank') },
 ];
 
 function normalizeDeal(raw, store) {
@@ -29,6 +28,10 @@ function normalizeDeal(raw, store) {
   if (!raw.title || !raw.link || !newPrice || !discount) return null;
 
   const category = raw.category || detectCategory(raw.title);
+  // Канал пока публикует только еду, одежду и технику — всё остальное
+  // (или то, что не удалось классифицировать) не постим.
+  if (!category || !CATEGORIES[category]) return null;
+
   const id = raw.id || makeId(raw.link, raw.title, newPrice);
 
   return {
