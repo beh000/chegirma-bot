@@ -103,4 +103,26 @@ async function captureNetwork(url, {
   return Promise.all(hits);
 }
 
-module.exports = { fetchRendered, closeBrowser, captureNetwork };
+// Диагностика: реальный скриншот страницы в base64 — когда текстовые
+// эвристики (цены, JSON, сетевые запросы) ничего не находят и непонятно,
+// что вообще на экране (антибот-заглушка? экран выбора города? просто
+// пустая страница?), проще один раз посмотреть глазами, чем гадать дальше.
+async function screenshotBase64(url, {
+  timeout = 30000, settleMs = 5000, width = 800, height = 600, quality = 40,
+} = {}) {
+  const context = await getContext();
+  const page = await context.newPage();
+  try {
+    await page.setViewportSize({ width, height });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+    if (settleMs) await page.waitForTimeout(settleMs);
+    const buffer = await page.screenshot({ type: 'jpeg', quality });
+    return buffer.toString('base64');
+  } finally {
+    await page.close();
+  }
+}
+
+module.exports = {
+  fetchRendered, closeBrowser, captureNetwork, screenshotBase64,
+};

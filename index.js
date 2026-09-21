@@ -7,7 +7,7 @@ const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
-const { closeBrowser, captureNetwork } = require('./utils/browser');
+const { closeBrowser, captureNetwork, screenshotBase64 } = require('./utils/browser');
 const {
   inspectUrl, inspectRendered, dumpCard, dumpCardRendered,
 } = require('./utils/inspect');
@@ -174,7 +174,27 @@ async function runInspection() {
     }
   }
 
-  if (useBrowser) await closeBrowser();
+  // INSPECT_SCREENSHOT_URL=<url> — печатает в лог base64 JPEG-скриншот
+  // страницы кусками по 1000 символов с порядковым номером, чтобы потом
+  // собрать и посмотреть глазами, когда все текстовые эвристики (цены,
+  // JSON, сетевые запросы) ничего не находят и непонятно, что на экране.
+  if (process.env.INSPECT_SCREENSHOT_URL) {
+    console.log(`\n--- [INSPECT-SHOT] ${process.env.INSPECT_SCREENSHOT_URL} ---`);
+    const b64 = await screenshotBase64(process.env.INSPECT_SCREENSHOT_URL);
+    const CHUNK = 1000;
+    const total = Math.ceil(b64.length / CHUNK);
+    console.log(`[INSPECT-SHOT] base64 длина ${b64.length}, кусков ${total}`);
+    for (let i = 0; i < total; i += 1) {
+      console.log(`[INSPECT-SHOT-B64] ${i}/${total} ${b64.slice(i * CHUNK, (i + 1) * CHUNK)}`);
+    }
+  }
+
+  // captureNetwork/screenshotBase64 всегда используют браузер независимо
+  // от useBrowser (он влияет только на inspectUrl/dumpCard) — закрываем
+  // его, если он вообще был запущен.
+  if (useBrowser || process.env.INSPECT_NETWORK_URL || process.env.INSPECT_SCREENSHOT_URL) {
+    await closeBrowser();
+  }
 }
 
 if (process.env.INSPECT === '1') {
