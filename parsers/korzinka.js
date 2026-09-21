@@ -24,7 +24,7 @@ const SELECTORS = {
 };
 
 async function parse() {
-  const html = await fetchRendered(PROMO_URL);
+  const html = await fetchRendered(PROMO_URL, { waitForSelector: '[class*="price"]', timeout: 45000 });
   const $ = cheerio.load(html);
 
   const jsonLdProducts = extractJsonLdProducts($);

@@ -26,8 +26,14 @@ async function closeBrowser() {
   await browser.close().catch(() => {});
 }
 
+// waitUntil по умолчанию 'domcontentloaded', а не 'networkidle' — на
+// korzinka.uz/mediapark.uz/asaxiy.uz "networkidle" ни разу не наступает
+// за 45с (постоянные фоновые запросы — чаты, аналитика и т.п.), из-за
+// чего вся загрузка отваливалась по таймауту без единого байта HTML.
+// Вместо этого ждём конкретный селектор с ценами — надёжнее для таких
+// сайтов и не медленнее для нормальных.
 async function fetchRendered(url, {
-  waitUntil = 'networkidle', timeout = 30000, waitForSelector,
+  waitUntil = 'domcontentloaded', timeout = 30000, waitForSelector, selectorTimeout = 15000,
 } = {}) {
   const browser = await getBrowser();
   const context = await browser.newContext({
@@ -39,7 +45,7 @@ async function fetchRendered(url, {
     const page = await context.newPage();
     await page.goto(url, { waitUntil, timeout });
     if (waitForSelector) {
-      await page.waitForSelector(waitForSelector, { timeout: 10000 }).catch(() => {});
+      await page.waitForSelector(waitForSelector, { timeout: selectorTimeout }).catch(() => {});
     }
     return await page.content();
   } finally {
