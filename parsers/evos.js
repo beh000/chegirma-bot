@@ -4,11 +4,14 @@ const {
   computeDiscount, extractNextData, deepFindArrays, guessProduct, scrapeCards,
 } = require('../utils/parserHelpers');
 
-// evos.uz/promo дал 404 в первом деплое — реальный сайт заказа с меню/комбо
-// найден веб-поиском на отдельном поддомене. Скорее всего SPA — пробуем
-// __NEXT_DATA__, иначе CSS-селекторы по главной странице меню.
-const BASE_URL = 'https://zakaz.evos.uz';
-const PROMO_URL = 'https://zakaz.evos.uz';
+// zakaz.evos.uz — это не сайт заказа, а страница-хаб со ссылками на
+// Telegram-бот/приложения/сайт (подтверждено INSPECT_TEXT_URL: там только
+// "Выберите способ" — Telegram Bot, iOS, Android, evos.uz, телефон).
+// Настоящее меню с разделом "Aksiyalar" и ценами — на основном сайте
+// evos.uz (Next.js), найден веб-поиском + подтверждён текстовым дампом
+// отрендеренной страницы.
+const BASE_URL = 'https://evos.uz';
+const PROMO_URL = 'https://evos.uz/';
 
 const SELECTORS = {
   item: '.promo-card, [class*="PromoCard"], [class*="product-card"], .card',
