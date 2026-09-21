@@ -4,11 +4,11 @@ const http = require('http');
 
 const { publishDeal } = require('./bot');
 const { isPosted, markPosted } = require('./utils/storage');
-const { makeId, computeDiscount } = require('./utils/parserHelpers');
+const { makeId, computeDiscount, extractNextData } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
 const {
-  closeBrowser, captureNetwork, screenshotBase64, textDump,
+  closeBrowser, captureNetwork, screenshotBase64, textDump, fetchRendered,
 } = require('./utils/browser');
 const {
   inspectUrl, inspectRendered, dumpCard, dumpCardRendered,
@@ -203,11 +203,32 @@ async function runInspection() {
     console.log(text);
   }
 
-  // captureNetwork/screenshotBase64/textDump всегда используют браузер
-  // независимо от useBrowser (он влияет только на inspectUrl/dumpCard) —
-  // закрываем его, если он вообще был запущен.
+  // INSPECT_JSON_URL + INSPECT_JSON_PATH — достаёт __NEXT_DATA__ с
+  // отрендеренной страницы и печатает поддерево по точечному пути
+  // (например "props.pageProps.sale"), чтобы увидеть реальную схему полей
+  // конкретного JSON-блока, не выкачивая весь __NEXT_DATA__ целиком.
+  if (process.env.INSPECT_JSON_URL) {
+    console.log(`\n--- [INSPECT-JSON] ${process.env.INSPECT_JSON_URL} путь=${process.env.INSPECT_JSON_PATH || '(корень)'} ---`);
+    const html = await fetchRendered(process.env.INSPECT_JSON_URL, { settleMs: 4000 });
+    const nextData = extractNextData(html);
+    if (!nextData) {
+      console.log('[INSPECT-JSON] __NEXT_DATA__ не найден');
+    } else {
+      let node = nextData;
+      const path = (process.env.INSPECT_JSON_PATH || '').split('.').filter(Boolean);
+      for (const key of path) node = node?.[key];
+      const str = JSON.stringify(node, null, 2) || 'undefined';
+      const LIMIT = 6000;
+      console.log(`[INSPECT-JSON] длина ${str.length}, показываю первые ${LIMIT}:`);
+      console.log(str.slice(0, LIMIT));
+    }
+  }
+
+  // captureNetwork/screenshotBase64/textDump/JSON-путь всегда используют
+  // браузер независимо от useBrowser (он влияет только на
+  // inspectUrl/dumpCard) — закрываем его, если он вообще был запущен.
   if (useBrowser || process.env.INSPECT_NETWORK_URL || process.env.INSPECT_SCREENSHOT_URL
-    || process.env.INSPECT_TEXT_URL) {
+    || process.env.INSPECT_TEXT_URL || process.env.INSPECT_JSON_URL) {
     await closeBrowser();
   }
 }
