@@ -201,10 +201,17 @@ async function runInspection() {
     const urls = process.env.INSPECT_TEXT_URL.split(',').map((s) => s.trim()).filter(Boolean);
     for (const url of urls) {
       console.log(`\n--- [INSPECT-TEXT] ${url} ---`);
-      // eslint-disable-next-line no-await-in-loop
-      const text = await textDump(url);
-      console.log(`[INSPECT-TEXT] длина ${text.length}`);
-      console.log(text);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const text = await textDump(url);
+        console.log(`[INSPECT-TEXT] длина ${text.length}`);
+        console.log(text);
+      } catch (err) {
+        // Один недоступный URL (DNS, таймаут) не должен обрывать проверку
+        // остальных — раньше это роняло весь процесс с exit(1), и Railway
+        // перезапускал контейнер в бесконечном цикле.
+        console.error(`[INSPECT-TEXT] ${url}: ошибка — ${err.message}`);
+      }
     }
   }
 
