@@ -1,39 +1,43 @@
-const { chromium } = require('playwright-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { chromium } = require('patchright');
 
 // Korzinka/Mediapark/Asaxiy отдают Cloudflare-челлендж ("Один момент…")
-// голому Playwright — он легко палится по типичным headless-признакам
-// (navigator.webdriver, отсутствие chrome.runtime и т.п.). stealth-плагин
-// маскирует эти признаки под обычный браузер; полной гарантии обхода
-// Cloudflare он не даёт (это его официально заявленный уровень — базовые
-// эвристики, не Turnstile-капчу), но для конкретно "Один момент…"
-// JS-челленджа шанс намного выше, чем без него.
-chromium.use(StealthPlugin());
+// обычному Playwright — тот палится через утечки Chrome DevTools Protocol
+// (в первую очередь Runtime.enable), которые обычные stealth-плагины на
+// уровне JS не закрывают. Patchright — форк Playwright, который патчит
+// сами эти утечки, а не маскирует признаки поверх. Гарантии обхода нет
+// (это по-прежнему не платный anti-detect уровня Cloudflare Turnstile),
+// но это следующий по силе бесплатный вариант после обычного stealth-плагина.
+//
+// По рекомендациям Patchright для максимальной незаметности: настоящий
+// Chrome (не Chromium), постоянный профиль (launchPersistentContext)
+// вместо одноразовых контекстов, БЕЗ подмены User-Agent — все это само по
+// себе может быть лишним отличительным признаком для антибота.
+const PROFILE_DIR = '/tmp/patchright-profile';
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-  + '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+// Один постоянный контекст на весь процесс — то же самое "браузерное
+// окно", а не новый профиль на каждый чих. closeBrowser() закрывает его
+// в конце runCycle() (см. index.js), чтобы не держать Chrome в памяти
+// между прогонами cron.
+let contextPromise = null;
 
-// Для сайтов, которые либо рендерят каталог через JS (SPA без данных в
-// исходном HTML), либо блокируют обычные HTTP-запросы (WAF/антибот).
-// Один браузер на весь цикл проверки — запускается лениво при первом
-// обращении, закрывается в конце runCycle() (см. index.js), чтобы не
-// держать Chromium в памяти между прогонами cron.
-let browserPromise = null;
-
-function getBrowser() {
-  if (!browserPromise) {
-    browserPromise = chromium.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+function getContext() {
+  if (!contextPromise) {
+    contextPromise = chromium.launchPersistentContext(PROFILE_DIR, {
+      channel: 'chrome',
+      headless: true,
+      viewport: { width: 1366, height: 900 },
+      locale: 'ru-RU',
+      args: ['--no-sandbox'],
     });
   }
-  return browserPromise;
+  return contextPromise;
 }
 
 async function closeBrowser() {
-  if (!browserPromise) return;
-  const browser = await browserPromise;
-  browserPromise = null;
-  await browser.close().catch(() => {});
+  if (!contextPromise) return;
+  const context = await contextPromise;
+  contextPromise = null;
+  await context.close().catch(() => {});
 }
 
 // waitUntil по умолчанию 'domcontentloaded', а не 'networkidle' — на
@@ -46,14 +50,9 @@ async function fetchRendered(url, {
   waitUntil = 'domcontentloaded', timeout = 30000, waitForSelector, selectorTimeout = 15000,
   settleMs = 0,
 } = {}) {
-  const browser = await getBrowser();
-  const context = await browser.newContext({
-    userAgent: UA,
-    locale: 'ru-RU',
-    viewport: { width: 1366, height: 900 },
-  });
+  const context = await getContext();
+  const page = await context.newPage();
   try {
-    const page = await context.newPage();
     await page.goto(url, { waitUntil, timeout });
     if (waitForSelector) {
       await page.waitForSelector(waitForSelector, { timeout: selectorTimeout }).catch(() => {});
@@ -64,8 +63,44 @@ async function fetchRendered(url, {
     if (settleMs) await page.waitForTimeout(settleMs);
     return await page.content();
   } finally {
-    await context.close();
+    await page.close();
   }
 }
 
-module.exports = { fetchRendered, closeBrowser };
+// Диагностика: открывает страницу и записывает все JSON-ответы (XHR/fetch),
+// которые сайт сам загружает при рендере — так можно найти внутренний API
+// сайта (часто отдаёт больше полей, чем показано в вёрстке, например
+// старую цену, которой нет в HTML) без доступа к DevTools вручную.
+async function captureNetwork(url, {
+  timeout = 30000, settleMs = 5000, maxHits = 15,
+} = {}) {
+  const context = await getContext();
+  const page = await context.newPage();
+  const hits = [];
+
+  page.on('response', (response) => {
+    if (hits.length >= maxHits) return;
+    const ct = response.headers()['content-type'] || '';
+    if (!ct.includes('application/json')) return;
+    hits.push(
+      response.text()
+        .then((body) => ({
+          url: response.url(),
+          status: response.status(),
+          bodyPreview: body.slice(0, 800),
+        }))
+        .catch((err) => ({ url: response.url(), status: response.status(), error: err.message })),
+    );
+  });
+
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+    if (settleMs) await page.waitForTimeout(settleMs);
+  } finally {
+    await page.close();
+  }
+
+  return Promise.all(hits);
+}
+
+module.exports = { fetchRendered, closeBrowser, captureNetwork };

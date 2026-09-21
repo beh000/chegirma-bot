@@ -7,7 +7,7 @@ const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
-const { closeBrowser } = require('./utils/browser');
+const { closeBrowser, captureNetwork } = require('./utils/browser');
 const {
   inspectUrl, inspectRendered, dumpCard, dumpCardRendered,
 } = require('./utils/inspect');
@@ -155,6 +155,23 @@ async function runInspection() {
   // категории.
   if (process.env.INSPECT_PRODUCT_URL) {
     await inspectUrl('TexnomartProduct', process.env.INSPECT_PRODUCT_URL, { hintLimit: 20 });
+  }
+
+  // INSPECT_NETWORK_URL=<url> — открывает страницу браузером и логирует
+  // все JSON-ответы (XHR/fetch), которые сайт сам загружает при рендере:
+  // так можно найти внутренний API сайта без доступа к DevTools вручную —
+  // он часто отдаёт больше полей, чем показано в готовой вёрстке.
+  if (process.env.INSPECT_NETWORK_URL) {
+    console.log(`\n--- [INSPECT-NETWORK] ${process.env.INSPECT_NETWORK_URL} ---`);
+    const hits = await captureNetwork(process.env.INSPECT_NETWORK_URL);
+    if (!hits.length) {
+      console.log('[INSPECT-NETWORK] JSON-ответов не поймано');
+    } else {
+      hits.forEach((hit, i) => {
+        console.log(`[INSPECT-NETWORK] #${i} ${hit.status} ${hit.url}`);
+        console.log(`[INSPECT-NETWORK] #${i} тело: ${hit.bodyPreview || hit.error}`);
+      });
+    }
   }
 
   if (useBrowser) await closeBrowser();
