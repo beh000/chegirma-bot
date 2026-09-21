@@ -123,6 +123,25 @@ async function screenshotBase64(url, {
   }
 }
 
+// Диагностика: весь видимый текст страницы (document.body.innerText) —
+// проще и надёжнее скриншота, когда нужно понять, что показывает сайт
+// (экран выбора города, пустая заглушка и т.п.): это обычный текст, его
+// можно читать прямо из лога без риска повредить при копировании, в
+// отличие от base64-скриншота, кусками которого легко ошибиться вручную.
+async function textDump(url, {
+  timeout = 30000, settleMs = 6000,
+} = {}) {
+  const context = await getContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+    if (settleMs) await page.waitForTimeout(settleMs);
+    return await page.evaluate(() => document.body.innerText);
+  } finally {
+    await page.close();
+  }
+}
+
 module.exports = {
-  fetchRendered, closeBrowser, captureNetwork, screenshotBase64,
+  fetchRendered, closeBrowser, captureNetwork, screenshotBase64, textDump,
 };

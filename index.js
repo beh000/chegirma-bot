@@ -7,7 +7,9 @@ const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
-const { closeBrowser, captureNetwork, screenshotBase64 } = require('./utils/browser');
+const {
+  closeBrowser, captureNetwork, screenshotBase64, textDump,
+} = require('./utils/browser');
 const {
   inspectUrl, inspectRendered, dumpCard, dumpCardRendered,
 } = require('./utils/inspect');
@@ -189,10 +191,23 @@ async function runInspection() {
     }
   }
 
-  // captureNetwork/screenshotBase64 всегда используют браузер независимо
-  // от useBrowser (он влияет только на inspectUrl/dumpCard) — закрываем
-  // его, если он вообще был запущен.
-  if (useBrowser || process.env.INSPECT_NETWORK_URL || process.env.INSPECT_SCREENSHOT_URL) {
+  // INSPECT_TEXT_URL=<url> — печатает в лог весь видимый текст страницы
+  // (document.body.innerText) целиком, обычным текстом, без base64 —
+  // надёжнее скриншота, когда только нужно понять, что за экран показан
+  // (выбор города, заглушка и т.п.), а не разглядывать вёрстку пиксель в
+  // пиксель.
+  if (process.env.INSPECT_TEXT_URL) {
+    console.log(`\n--- [INSPECT-TEXT] ${process.env.INSPECT_TEXT_URL} ---`);
+    const text = await textDump(process.env.INSPECT_TEXT_URL);
+    console.log(`[INSPECT-TEXT] длина ${text.length}`);
+    console.log(text);
+  }
+
+  // captureNetwork/screenshotBase64/textDump всегда используют браузер
+  // независимо от useBrowser (он влияет только на inspectUrl/dumpCard) —
+  // закрываем его, если он вообще был запущен.
+  if (useBrowser || process.env.INSPECT_NETWORK_URL || process.env.INSPECT_SCREENSHOT_URL
+    || process.env.INSPECT_TEXT_URL) {
     await closeBrowser();
   }
 }
