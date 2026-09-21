@@ -1,17 +1,16 @@
 const cheerio = require('cheerio');
-const { fetchHtml } = require('../utils/http');
+const { fetchRendered } = require('../utils/browser');
 const {
-  parsePrice, computeDiscount, absoluteUrl, scrapeCards,
+  computeDiscount, scrapeCards,
 } = require('../utils/parserHelpers');
 
 const BASE_URL = 'https://aliexpress.com';
-// ВАЖНО: AliExpress отдаёт каталог через тяжёлый JS-рендеринг и активно
+// AliExpress отдаёт каталог через тяжёлый JS-рендеринг и активно
 // защищается от ботов (антибот/капча на уровне CDN) — простой axios+cheerio
-// запрос с высокой вероятностью получит пустую/заглушечную страницу.
-// Это не баг парсера, а ограничение сайта. Если после деплоя лог стабильно
-// показывает 0 акций, реальные варианты: 1) Aliexpress Affiliate API
-// (официальный, требует регистрации партнёром), 2) headless-браузер
-// (Playwright) с проксями, что сильно увеличит нагрузку и сложность.
+// запрос гарантированно получает пустую заглушку. Пробуем headless-браузер
+// со stealth-плагином (см. utils/browser.js) — не гарантия обхода, но
+// единственный бесплатный вариант; официальная альтернатива — AliExpress
+// Affiliate API (нужна партнёрская регистрация).
 const PROMO_URL = 'https://aliexpress.com/ru/deals';
 
 const SELECTORS = {
@@ -24,7 +23,11 @@ const SELECTORS = {
 };
 
 async function parse() {
-  const html = await fetchHtml(PROMO_URL);
+  const html = await fetchRendered(PROMO_URL, {
+    waitForSelector: '[class*="price"]',
+    timeout: 45000,
+    settleMs: 5000,
+  });
   const $ = cheerio.load(html);
 
   const cards = scrapeCards($, BASE_URL, SELECTORS);

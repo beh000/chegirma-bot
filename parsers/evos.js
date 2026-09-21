@@ -25,9 +25,17 @@ function looksLikeProduct(item) {
 }
 
 // zakaz.evos.uz отдал пустую SPA-оболочку (864 байта) без JS — грузим
-// headless-браузером, чтобы дождаться рендера меню.
+// headless-браузером. При первой проверке даже после рендера меню не
+// появлялось за 10с — вероятно, сайту сначала нужно выбрать город/точку
+// доставки; даём больше времени на гидратацию (settleMs) на случай, если
+// дело просто в медленной загрузке, а не в обязательном шаге навигации.
 async function parse() {
-  const html = await fetchRendered(PROMO_URL, { waitForSelector: '[class*="price"]' });
+  const html = await fetchRendered(PROMO_URL, {
+    waitForSelector: '[class*="price"]',
+    timeout: 45000,
+    selectorTimeout: 20000,
+    settleMs: 6000,
+  });
   const $ = cheerio.load(html);
 
   const nextData = extractNextData(html);

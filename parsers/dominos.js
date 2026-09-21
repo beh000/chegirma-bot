@@ -22,7 +22,11 @@ const SELECTORS = {
 // headless-браузер рендерит финальный DOM, так что цены уже видны как
 // обычный текст — проще, чем писать декодер под их формат сериализации.
 async function parse() {
-  const html = await fetchRendered(PROMO_URL, { waitForSelector: '[class*="price"]', timeout: 45000 });
+  const html = await fetchRendered(PROMO_URL, {
+    waitForSelector: '[class*="price"]',
+    timeout: 45000,
+    settleMs: 3000,
+  });
   const $ = cheerio.load(html);
 
   const cards = scrapeCards($, BASE_URL, SELECTORS);
