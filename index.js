@@ -191,16 +191,21 @@ async function runInspection() {
     }
   }
 
-  // INSPECT_TEXT_URL=<url> — печатает в лог весь видимый текст страницы
-  // (document.body.innerText) целиком, обычным текстом, без base64 —
-  // надёжнее скриншота, когда только нужно понять, что за экран показан
-  // (выбор города, заглушка и т.п.), а не разглядывать вёрстку пиксель в
-  // пиксель.
+  // INSPECT_TEXT_URL=<url>[,<url>...] — печатает в лог весь видимый текст
+  // страницы (document.body.innerText) целиком, обычным текстом, без
+  // base64 — надёжнее скриншота, когда только нужно понять, что за экран
+  // показан (выбор города, заглушка и т.п.), а не разглядывать вёрстку
+  // пиксель в пиксель. Несколько URL через запятую — чтобы проверить
+  // несколько страниц за один прогон.
   if (process.env.INSPECT_TEXT_URL) {
-    console.log(`\n--- [INSPECT-TEXT] ${process.env.INSPECT_TEXT_URL} ---`);
-    const text = await textDump(process.env.INSPECT_TEXT_URL);
-    console.log(`[INSPECT-TEXT] длина ${text.length}`);
-    console.log(text);
+    const urls = process.env.INSPECT_TEXT_URL.split(',').map((s) => s.trim()).filter(Boolean);
+    for (const url of urls) {
+      console.log(`\n--- [INSPECT-TEXT] ${url} ---`);
+      // eslint-disable-next-line no-await-in-loop
+      const text = await textDump(url);
+      console.log(`[INSPECT-TEXT] длина ${text.length}`);
+      console.log(text);
+    }
   }
 
   // INSPECT_JSON_URL + INSPECT_JSON_PATH — достаёт __NEXT_DATA__ с
