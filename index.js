@@ -77,8 +77,10 @@ async function processSite({ name, store, mod }) {
       postedCount += 1;
       console.log(`[${name}] ✅ Опубликовано: ${deal.title} (-${deal.discount}%)`);
     }
-    // Пауза между постами, чтобы не упереться в лимиты Telegram API
-    await delay(1500);
+    // Пауза между постами, чтобы не упереться в лимиты Telegram API —
+    // 1.5с давали 429 при первом реальном прогоне (11 постов подряд с
+    // фото), 2.5с с запасом.
+    await delay(2500);
   }
 
   console.log(`[${name}] Новых публикаций: ${postedCount}`);

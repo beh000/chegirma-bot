@@ -15,12 +15,32 @@ if (!CHANNEL_ID) throw new Error('CHANNEL_ID не задан в переменн
 // вызывается Telegram Bot API через axios.
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-async function callTelegram(method, payload) {
-  const res = await axios.post(`${API_BASE}/${method}`, payload, { timeout: 30000 });
-  if (!res.data || res.data.ok !== true) {
-    throw new Error(`Telegram API ${method}: ${JSON.stringify(res.data)}`);
+function delay(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+// Каждый пост с фото, у которого не проходит вариант "по ссылке", стоит
+// два обращения к Telegram API вместо одного (сначала неудачный sendPhoto
+// по URL, потом ещё один — файлом) — при частой публикации это быстро
+// упирается в лимит Telegram (429). Вместо того чтобы просто сдаваться,
+// ждём ровно столько, сколько просит сам Telegram (retry_after), и
+// пробуем ещё раз — так временный throttling не роняет публикацию.
+async function callTelegram(method, payload, attempt = 0) {
+  try {
+    const res = await axios.post(`${API_BASE}/${method}`, payload, { timeout: 30000 });
+    if (!res.data || res.data.ok !== true) {
+      throw new Error(`Telegram API ${method}: ${JSON.stringify(res.data)}`);
+    }
+    return res.data.result;
+  } catch (err) {
+    const retryAfter = err.response?.data?.parameters?.retry_after;
+    if (retryAfter && attempt < 2) {
+      console.warn(`[bot] Telegram просит подождать ${retryAfter}с (429) перед ${method} — жду и пробую снова`);
+      await delay((retryAfter + 1) * 1000);
+      return callTelegram(method, payload, attempt + 1);
+    }
+    throw err;
   }
-  return res.data.result;
 }
 
 // Ошибку axios/Telegram по умолчанию логируем как бессмысленный
@@ -113,31 +133,21 @@ async function publishDeal(deal) {
   const shortCaption = caption.length <= PHOTO_CAPTION_LIMIT;
 
   if (deal.image) {
-    // Попытка 1: отдать Telegram ссылку на фото — он сам её скачивает,
-    // для нас это бесплатно по трафику.
-    try {
-      if (shortCaption) {
-        await callTelegram('sendPhoto', { chat_id: CHANNEL_ID, photo: deal.image, caption });
-      } else {
-        await callTelegram('sendPhoto', { chat_id: CHANNEL_ID, photo: deal.image });
-        await callTelegram('sendMessage', { chat_id: CHANNEL_ID, text: caption });
-      }
-      return true;
-    } catch (err) {
-      console.warn(`[bot] Фото по ссылке не прошло для "${deal.title}": ${telegramErrorMessage(err)} — пробую скачать и загрузить файлом`);
-    }
-
-    // Попытка 2: скачиваем сами и грузим как файл (обходит хотлинк-защиту).
+    // Сразу качаем сами и грузим файлом: у "по ссылке" (Telegram сам
+    // фетчит URL без Referer/UA) на практике почти 100% отказ на сайтах с
+    // хотлинк-защитой (замечено на uzum.uz — "failed to get HTTP URL
+    // content"), а держать оба варианта означало 2 запроса к Telegram API
+    // на пост и лишний 429 при частой публикации.
     try {
       await sendPhotoUpload(deal.image, shortCaption ? caption : null);
       if (!shortCaption) await callTelegram('sendMessage', { chat_id: CHANNEL_ID, text: caption });
       return true;
     } catch (err) {
-      console.error(`[bot] Загрузка фото файлом тоже не прошла для "${deal.title}": ${telegramErrorMessage(err)}`);
+      console.error(`[bot] Загрузка фото файлом не прошла для "${deal.title}": ${telegramErrorMessage(err)} — публикую текстом`);
     }
   }
 
-  // Попытка 3: совсем без фото — лишь бы акция не потерялась.
+  // Фолбэк: совсем без фото — лишь бы акция не потерялась.
   try {
     await callTelegram('sendMessage', { chat_id: CHANNEL_ID, text: caption });
     return true;
