@@ -1,69 +1,40 @@
-const cheerio = require('cheerio');
 const { fetchRendered } = require('../utils/browser');
 const {
-  computeDiscount, extractNextData, deepFindArrays, guessProduct, scrapeCards,
+  parsePrice, extractNextData, absoluteUrl,
 } = require('../utils/parserHelpers');
 
 // zakaz.evos.uz — это не сайт заказа, а страница-хаб со ссылками на
 // Telegram-бот/приложения/сайт (подтверждено INSPECT_TEXT_URL: там только
 // "Выберите способ" — Telegram Bot, iOS, Android, evos.uz, телефон).
-// Настоящее меню с разделом "Aksiyalar" и ценами — на основном сайте
-// evos.uz (Next.js), найден веб-поиском + подтверждён текстовым дампом
-// отрендеренной страницы.
+// Настоящее меню — на основном сайте evos.uz (Next.js), найден веб-поиском
+// и подтверждён рендером страницы.
 const BASE_URL = 'https://evos.uz';
 const PROMO_URL = 'https://evos.uz/';
 
-const SELECTORS = {
-  item: '.promo-card, [class*="PromoCard"], [class*="product-card"], .card',
-  title: '.promo-card__title, [class*="title"], h3',
-  oldPrice: '[class*="oldPrice"], s, del',
-  newPrice: '[class*="price"]:not([class*="old"])',
-  image: 'img',
-  link: 'a',
-};
-
-function looksLikeProduct(item) {
-  return item && (item.price !== undefined || item.salePrice !== undefined
-    || item.title !== undefined || item.name !== undefined);
-}
-
-// zakaz.evos.uz отдал пустую SPA-оболочку (864 байта) без JS — грузим
-// headless-браузером. При первой проверке даже после рендера меню не
-// появлялось за 10с — вероятно, сайту сначала нужно выбрать город/точку
-// доставки; даём больше времени на гидратацию (settleMs) на случай, если
-// дело просто в медленной загрузке, а не в обязательном шаге навигации.
+// evos.uz рендерит меню через __NEXT_DATA__.props.pageProps.sale — раздел
+// "Aksiyalar" сайта. Подтверждено через INSPECT_JSON_URL/PATH: и sale, и
+// полное меню (props.pageProps.getMenu.data.menu[].foods) содержат только
+// одно поле цены — "dprice" — ни в одном товаре нет поля старой/базовой
+// цены. То есть у EVOS "акции" — это просто подборка комбо по
+// фиксированной цене, а не скидка % от полной цены: как у Texnomart и
+// Dominos, это реальное отсутствие данных на сайте, а не ошибка парсинга.
+// discount всегда будет null и normalizeDeal (index.js) их отфильтрует —
+// это ожидаемо. Код оставлен в JSON-варианте (а не CSS-селекторах), чтобы
+// если EVOS когда-нибудь добавит поле старой цены, публикации заработают
+// сами по себе без переписывания парсера.
 async function parse() {
-  const html = await fetchRendered(PROMO_URL, {
-    waitForSelector: '[class*="price"]',
-    timeout: 45000,
-    selectorTimeout: 20000,
-    settleMs: 6000,
-  });
-  const $ = cheerio.load(html);
-
+  const html = await fetchRendered(PROMO_URL, { settleMs: 4000 });
   const nextData = extractNextData(html);
-  if (nextData) {
-    const arrays = deepFindArrays(nextData, looksLikeProduct);
-    const products = [];
-    for (const arr of arrays) {
-      for (const item of arr) {
-        const guessed = guessProduct(item, BASE_URL);
-        if (guessed) products.push(guessed);
-      }
-    }
-    if (products.length) {
-      return products.map((p) => ({
-        ...p,
-        discount: computeDiscount(p.oldPrice, p.newPrice),
-        category: 'food',
-      }));
-    }
-  }
+  const items = nextData?.props?.pageProps?.sale?.data;
+  if (!Array.isArray(items)) return [];
 
-  const cards = scrapeCards($, BASE_URL, SELECTORS);
-  return cards.map((c) => ({
-    ...c,
-    discount: computeDiscount(c.oldPrice, c.newPrice),
+  return items.map((item) => ({
+    title: item.title,
+    oldPrice: null,
+    newPrice: parsePrice(item.dprice),
+    discount: null,
+    image: item.img || null,
+    link: absoluteUrl(BASE_URL, `/product/${item.id}`),
     category: 'food',
   }));
 }
