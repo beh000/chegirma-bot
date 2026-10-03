@@ -157,4 +157,6 @@ async function publishDeal(deal) {
   }
 }
 
-module.exports = { publishDeal, buildCaption };
+module.exports = {
+  publishDeal, buildCaption, callTelegram, telegramErrorMessage,
+};

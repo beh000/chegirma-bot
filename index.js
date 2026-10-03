@@ -3,6 +3,8 @@ const cron = require('node-cron');
 const http = require('http');
 
 const { publishDeal } = require('./bot');
+const { discoverAdmin, reportCycle } = require('./admin');
+const { getState, saveState } = require('./utils/state');
 const { isPosted, markPosted } = require('./utils/storage');
 const { makeId, computeDiscount, extractNextData } = require('./utils/parserHelpers');
 const { detectCategory, CATEGORIES } = require('./utils/category');
@@ -24,6 +26,9 @@ const SITES = [
 ];
 
 const MAX_POSTS_PER_SITE = Number(process.env.MAX_POSTS_PER_SITE) || 3;
+// Линейка товара, уже публиковавшаяся за это время, уступает место другим.
+const VARIETY_HOURS = 24;
+const HOUR = 60 * 60 * 1000;
 
 function normalizeDeal(raw, store) {
   const oldPrice = raw.oldPrice ?? null;
@@ -53,6 +58,53 @@ function normalizeDeal(raw, store) {
   };
 }
 
+// "Линейка" товара — первые два слова названия ("Каша Kabrita",
+// "Леденцы Herbion"): у Makro самые большие скидки часто идут целыми
+// линейками, и без этого в канал подряд уходило 9 вкусов одной каши.
+function productGroup(title) {
+  return title.toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 1 && !/^\d+$/.test(w))
+    .slice(0, 2)
+    .join(' ');
+}
+
+// Самые большие скидки первыми, но не больше одного товара из одной
+// линейки за цикл и с приоритетом линеек, которых не было последние
+// VARIETY_HOURS. Не попавшие в выборку не помечаются опубликованными и
+// выходят в следующих циклах.
+function pickDeals(deals, limit) {
+  const groupPostedAt = getState().groupPostedAt || {};
+  const now = Date.now();
+  const picked = [];
+  const groups = new Set();
+  const take = (allowRecent) => {
+    for (const deal of deals) {
+      if (picked.length >= limit) return;
+      const group = productGroup(deal.title);
+      if (groups.has(group) || picked.includes(deal)) continue;
+      if (!allowRecent && now - (groupPostedAt[group] || 0) < VARIETY_HOURS * HOUR) continue;
+      groups.add(group);
+      picked.push(deal);
+    }
+  };
+  take(false);
+  take(true);
+  return picked;
+}
+
+function rememberGroup(title) {
+  const state = getState();
+  const now = Date.now();
+  state.groupPostedAt = state.groupPostedAt || {};
+  state.groupPostedAt[productGroup(title)] = now;
+  for (const [group, at] of Object.entries(state.groupPostedAt)) {
+    if (now - at > 7 * 24 * HOUR) delete state.groupPostedAt[group];
+  }
+  saveState();
+}
+
 async function processSite({ name, store, mod }) {
   console.log(`[${name}] Проверка сайта...`);
 
@@ -60,27 +112,24 @@ async function processSite({ name, store, mod }) {
   try {
     rawDeals = await mod.parse();
   } catch (err) {
-    console.error(`[${name}] Ошибка парсинга: ${err.message}`);
-    return;
+    const message = err.message.split('\n')[0].slice(0, 200);
+    console.error(`[${name}] Ошибка парсинга: ${message}`);
+    return { name, error: message, found: 0, posted: 0 };
   }
 
   console.log(`[${name}] Найдено акций на странице: ${rawDeals.length}`);
 
-  // Самые большие скидки первыми, и не больше MAX_POSTS_PER_SITE за цикл:
-  // иначе источник со 160 акциями (Makro) за один прогон завалил бы канал
-  // сотней постов подряд. Остальные не помечаются опубликованными и
-  // выходят в следующих циклах.
   const fresh = rawDeals
     .map((raw) => normalizeDeal(raw, store))
     .filter((deal) => deal && !isPosted(deal.id))
-    .sort((a, b) => b.discount - a.discount)
-    .slice(0, MAX_POSTS_PER_SITE);
+    .sort((a, b) => b.discount - a.discount);
 
   let postedCount = 0;
-  for (const deal of fresh) {
+  for (const deal of pickDeals(fresh, MAX_POSTS_PER_SITE)) {
     const ok = await publishDeal(deal);
     if (ok) {
       markPosted(deal.id, { title: deal.title, store });
+      rememberGroup(deal.title);
       postedCount += 1;
       console.log(`[${name}] ✅ Опубликовано: ${deal.title} (-${deal.discount}%)`);
     }
@@ -91,16 +140,21 @@ async function processSite({ name, store, mod }) {
   }
 
   console.log(`[${name}] Новых публикаций: ${postedCount}`);
+  return { name, found: rawDeals.length, posted: postedCount };
 }
 
 async function runCycle() {
   console.log(`\n=== Запуск цикла проверки: ${new Date().toISOString()} ===`);
+  await discoverAdmin();
 
+  const results = [];
   for (const site of SITES) {
     try {
-      await processSite(site);
+      results.push(await processSite(site));
     } catch (err) {
-      console.error(`[${site.name}] Непредвиденная ошибка: ${err.message}`);
+      const message = err.message.split('\n')[0].slice(0, 200);
+      console.error(`[${site.name}] Непредвиденная ошибка: ${message}`);
+      results.push({ name: site.name, error: message, found: 0, posted: 0 });
     }
     // Пауза между сайтами
     await delay(2500);
@@ -110,6 +164,7 @@ async function runCycle() {
   // в памяти постоянно — используется только частью сайтов (browser.js).
   await closeBrowser();
 
+  await reportCycle(results);
   console.log('=== Цикл завершён ===\n');
 }
 
