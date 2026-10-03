@@ -15,13 +15,9 @@ const {
 } = require('./utils/inspect');
 
 const SITES = [
-  { name: 'Korzinka', store: 'Korzinka.uz', mod: require('./parsers/korzinka') },
   { name: 'Makro', store: 'Makro.uz', mod: require('./parsers/makro') },
   { name: 'Uzum', store: 'Uzum Market', mod: require('./parsers/uzum') },
   { name: 'Texnomart', store: 'Texnomart', mod: require('./parsers/texnomart') },
-  { name: 'Mediapark', store: 'Mediapark', mod: require('./parsers/mediapark') },
-  { name: 'Asaxiy', store: 'Asaxiy', mod: require('./parsers/asaxiy') },
-  { name: 'AliExpress', store: 'AliExpress', mod: require('./parsers/aliexpress') },
   { name: 'Evos', store: 'EVOS', mod: require('./parsers/evos') },
   { name: 'Dominos', store: "Domino's Pizza", mod: require('./parsers/dominos') },
   { name: 'Tezz', store: 'TEZZ.UZ', mod: require('./parsers/tezz') },
