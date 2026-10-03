@@ -8,7 +8,7 @@ const { makeId, computeDiscount, extractNextData } = require('./utils/parserHelp
 const { detectCategory, CATEGORIES } = require('./utils/category');
 const { delay } = require('./utils/http');
 const {
-  closeBrowser, captureNetwork, screenshotBase64, textDump, fetchRendered,
+  closeBrowser, captureNetwork, screenshotBase64, textDump, fetchRendered, probePage,
 } = require('./utils/browser');
 const {
   inspectUrl, inspectRendered, dumpCard, dumpCardRendered,
@@ -237,13 +237,26 @@ async function runInspection() {
     }
   }
 
-  // captureNetwork/screenshotBase64/textDump/JSON-путь всегда используют
-  // браузер независимо от useBrowser (он влияет только на
-  // inspectUrl/dumpCard) — закрываем его, если он вообще был запущен.
-  if (useBrowser || process.env.INSPECT_NETWORK_URL || process.env.INSPECT_SCREENSHOT_URL
-    || process.env.INSPECT_TEXT_URL || process.env.INSPECT_JSON_URL) {
-    await closeBrowser();
+  // INSPECT_PROBE_URLS=<url>[,<url>...] — оценка новых источников одним
+  // прогоном: антибот или нет, заголовок, текст, ссылки на акции, JSON API.
+  if (process.env.INSPECT_PROBE_URLS) {
+    const urls = process.env.INSPECT_PROBE_URLS.split(',').map((s) => s.trim()).filter(Boolean);
+    for (const url of urls) {
+      console.log(`\n--- [PROBE] ${url} ---`);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await probePage(url);
+        console.log(`[PROBE] final=${r.finalUrl} status=${r.status} challenge=${r.challenge} title=${JSON.stringify(r.title)}`);
+        console.log(`[PROBE] text: ${JSON.stringify(r.text)}`);
+        r.promoLinks.forEach((l) => console.log(`[PROBE] link: ${l.href} | ${l.text}`));
+        r.json.forEach((j) => console.log(`[PROBE] json: ${j.status} ${j.url} | ${j.preview.replace(/\s+/g, ' ')}`));
+      } catch (err) {
+        console.error(`[PROBE] ${url}: ошибка — ${err.message.split('\n')[0]}`);
+      }
+    }
   }
+
+  await closeBrowser();
 }
 
 if (process.env.INSPECT === '1') {

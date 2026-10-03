@@ -164,6 +164,57 @@ async function textDump(url, {
   }
 }
 
+// Диагностика нового источника за один заход: куда в итоге привела
+// страница, её заголовок, похоже ли на антибот-челлендж, начало видимого
+// текста, ссылки на разделы акций/скидок и JSON-запросы самого сайта.
+// Нужна, чтобы оценить сразу несколько кандидатов одним прогоном вместо
+// отдельного редеплоя на каждый вид проверки.
+const PROMO_LINK_RE = /akci|aksiy|promo|sale|skidk|discount|cashback|keshbek|chegirma|скидк|акци|распрод|кешб|кэшб/i;
+const CHALLENGE_RE = /Один момент|Just a moment|проверки безопасности|Checking your browser|Attention Required|cf-chl/i;
+
+async function probePage(url, {
+  timeout = 40000, settleMs = 7000, textLimit = 1500, maxLinks = 25, maxJson = 12,
+} = {}) {
+  const context = await getContext();
+  const page = await context.newPage();
+  const json = [];
+  page.on('response', (response) => {
+    if (json.length >= maxJson) return;
+    const ct = response.headers()['content-type'] || '';
+    if (!ct.includes('json')) return;
+    json.push(
+      response.text()
+        .then((body) => ({ url: response.url(), status: response.status(), preview: body.slice(0, 300) }))
+        .catch((err) => ({ url: response.url(), status: response.status(), preview: `(${err.message})` })),
+    );
+  });
+
+  try {
+    const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+    await page.waitForTimeout(settleMs);
+    const title = await page.title();
+    const text = await page.evaluate(() => document.body?.innerText || '');
+    const links = await page.evaluate(() => Array.from(document.querySelectorAll('a[href]'))
+      .map((a) => ({ href: a.href, text: (a.innerText || '').trim().slice(0, 60) })));
+    const seen = new Set();
+    const promoLinks = links
+      .filter((l) => PROMO_LINK_RE.test(l.href) || PROMO_LINK_RE.test(l.text))
+      .filter((l) => !seen.has(l.href) && seen.add(l.href))
+      .slice(0, maxLinks);
+    return {
+      finalUrl: page.url(),
+      status: resp ? resp.status() : null,
+      title,
+      challenge: CHALLENGE_RE.test(title) || CHALLENGE_RE.test(text.slice(0, 2000)),
+      text: text.replace(/\n{2,}/g, '\n').slice(0, textLimit),
+      promoLinks,
+      json: await Promise.all(json),
+    };
+  } finally {
+    await page.close();
+  }
+}
+
 module.exports = {
-  fetchRendered, closeBrowser, captureNetwork, screenshotBase64, textDump,
+  fetchRendered, closeBrowser, captureNetwork, screenshotBase64, textDump, probePage,
 };
