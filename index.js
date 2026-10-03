@@ -23,6 +23,8 @@ const SITES = [
   { name: 'Tezz', store: 'TEZZ.UZ', mod: require('./parsers/tezz') },
 ];
 
+const MAX_POSTS_PER_SITE = Number(process.env.MAX_POSTS_PER_SITE) || 3;
+
 function normalizeDeal(raw, store) {
   const oldPrice = raw.oldPrice ?? null;
   const newPrice = raw.newPrice ?? null;
@@ -64,12 +66,18 @@ async function processSite({ name, store, mod }) {
 
   console.log(`[${name}] Найдено акций на странице: ${rawDeals.length}`);
 
-  let postedCount = 0;
-  for (const raw of rawDeals) {
-    const deal = normalizeDeal(raw, store);
-    if (!deal) continue;
-    if (isPosted(deal.id)) continue;
+  // Самые большие скидки первыми, и не больше MAX_POSTS_PER_SITE за цикл:
+  // иначе источник со 160 акциями (Makro) за один прогон завалил бы канал
+  // сотней постов подряд. Остальные не помечаются опубликованными и
+  // выходят в следующих циклах.
+  const fresh = rawDeals
+    .map((raw) => normalizeDeal(raw, store))
+    .filter((deal) => deal && !isPosted(deal.id))
+    .sort((a, b) => b.discount - a.discount)
+    .slice(0, MAX_POSTS_PER_SITE);
 
+  let postedCount = 0;
+  for (const deal of fresh) {
     const ok = await publishDeal(deal);
     if (ok) {
       markPosted(deal.id, { title: deal.title, store });
