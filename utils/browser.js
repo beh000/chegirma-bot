@@ -5,39 +5,61 @@ const { chromium } = require('patchright');
 // (в первую очередь Runtime.enable), которые обычные stealth-плагины на
 // уровне JS не закрывают. Patchright — форк Playwright, который патчит
 // сами эти утечки, а не маскирует признаки поверх. Гарантии обхода нет
-// (это по-прежнему не платный anti-detect уровня Cloudflare Turnstile),
-// но это следующий по силе бесплатный вариант после обычного stealth-плагина.
-//
-// По рекомендациям Patchright для максимальной незаметности: настоящий
-// Chrome (не Chromium), постоянный профиль (launchPersistentContext)
-// вместо одноразовых контекстов, БЕЗ подмены User-Agent — все это само по
-// себе может быть лишним отличительным признаком для антибота.
-const PROFILE_DIR = '/tmp/patchright-profile';
-
-// Один постоянный контекст на весь процесс — то же самое "браузерное
-// окно", а не новый профиль на каждый чих. closeBrowser() закрывает его
-// в конце runCycle() (см. index.js), чтобы не держать Chrome в памяти
-// между прогонами cron.
+// (это по-прежнему не платный anti-detect уровня Cloudflare Turnstile) —
+// и по факту не помог (Korzinka/Mediapark/Asaxiy/AliExpress всё равно
+// блокируются), так что раньше используемый постоянный профиль на диске
+// (launchPersistentContext) не давал никакой выгоды, а только риск:
+// профиль переиспользовался на каждом cron-цикле без очистки и спустя
+// ~5 суток непрерывной работы контейнера ломался (stale SingletonLock /
+// разросшийся кэш в /tmp) — после чего ВСЕ сайты на браузере валились с
+// "Target crashed" без возможности самовосстановления, вплоть до рестарта
+// контейнера. Обнаружено 2026-10-03: бот не публиковал вообще ничего уже
+// около 5+ дней. Переход на обычный (не persistent) контекст с полным
+// закрытием браузера в конце каждого цикла убирает саму возможность
+// накопления состояния на диске между прогонами.
+let browserPromise = null;
 let contextPromise = null;
+
+function getBrowser() {
+  if (!browserPromise) {
+    // Если launch() упадёт, НЕ оставляем здесь отклонённый промис — иначе
+    // он закэшируется навсегда, и каждый следующий вызов getBrowser() в
+    // этом же процессе будет мгновенно повторять ту же ошибку без единой
+    // новой попытки вплоть до перезапуска контейнера (ровно так застрял
+    // баг с "Target crashed" выше).
+    browserPromise = chromium.launch({ channel: 'chrome', headless: true, args: ['--no-sandbox'] })
+      .catch((err) => {
+        browserPromise = null;
+        throw err;
+      });
+  }
+  return browserPromise;
+}
 
 function getContext() {
   if (!contextPromise) {
-    contextPromise = chromium.launchPersistentContext(PROFILE_DIR, {
-      channel: 'chrome',
-      headless: true,
+    contextPromise = getBrowser().then((browser) => browser.newContext({
       viewport: { width: 1366, height: 900 },
       locale: 'ru-RU',
-      args: ['--no-sandbox'],
+    })).catch((err) => {
+      contextPromise = null;
+      throw err;
     });
   }
   return contextPromise;
 }
 
 async function closeBrowser() {
-  if (!contextPromise) return;
-  const context = await contextPromise;
-  contextPromise = null;
-  await context.close().catch(() => {});
+  if (contextPromise) {
+    const context = await contextPromise;
+    contextPromise = null;
+    await context.close().catch(() => {});
+  }
+  if (browserPromise) {
+    const browser = await browserPromise;
+    browserPromise = null;
+    await browser.close().catch(() => {});
+  }
 }
 
 // waitUntil по умолчанию 'domcontentloaded', а не 'networkidle' — на
