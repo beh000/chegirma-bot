@@ -58,16 +58,18 @@ function normalizeDeal(raw, store) {
   };
 }
 
-// "Линейка" товара — первые два слова названия ("Каша Kabrita",
-// "Леденцы Herbion"): у Makro самые большие скидки часто идут целыми
-// линейками, и без этого в канал подряд уходило 9 вкусов одной каши.
+// "Линейка" товара — бренд (первое латинское слово: "Kabrita", "Herbion",
+// "Borjomi"), а если его нет — первые два слова названия ("Каша Фруто").
+// У Makro самые большие скидки идут целыми брендами: без этого в канал
+// подряд уходили 9 вкусов одной каши, а при группировке по двум словам —
+// "Каша Kabrita", "Смесь Kabrita", "Пюре Kabrita" в одном цикле.
 function productGroup(title) {
-  return title.toLowerCase()
+  const words = title.toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
-    .filter((w) => w.length > 1 && !/^\d+$/.test(w))
-    .slice(0, 2)
-    .join(' ');
+    .filter((w) => w.length > 1 && !/^\d+$/.test(w));
+  const brand = words.find((w) => /^[a-z]{3,}$/.test(w));
+  return brand || words.slice(0, 2).join(' ');
 }
 
 // Самые большие скидки первыми, но не больше одного товара из одной
